@@ -8,7 +8,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "olight"))
 
 import protocol  # noqa: E402
-from protocol import RECORD_LEN, SLOT_ORDER, decode_slots  # noqa: E402
+from datetime import time  # noqa: E402
+
+from protocol import (  # noqa: E402
+    RECORD_LEN,
+    SLOT_ORDER,
+    decode_pause_window,
+    decode_slots,
+    encode_pause_window,
+)
 
 
 # The DP110 blob exactly as published in tuya-local issue #6069.
@@ -18,10 +26,10 @@ PUBLISHED_DUMP = (
 )
 
 
-def record(slot, chem=0x01, soc=100, hours=0, mins=0, mv=1400, ca=0, temp=25):
+def record(slot, chem=0x01, soc=100, hours=0, mins=0, mv=1400, ca=0, byte12=25):
     """Build one 17-byte bay record."""
     return bytes([slot, chem, soc, hours, mins, 0, 0, 0]) \
-        + mv.to_bytes(2, "big") + ca.to_bytes(2, "big") + bytes([temp, 0, 0, 0, 0])
+        + mv.to_bytes(2, "big") + ca.to_bytes(2, "big") + bytes([byte12, 0, 0, 0, 0])
 
 
 def payload(*records):
@@ -39,7 +47,7 @@ def test_decodes_a_full_four_bay_payload():
     assert set(slots) == set(SLOT_ORDER)
     aa1 = slots[3]
     assert (aa1.label, aa1.size) == ("AA1", "AA")
-    assert (aa1.chemistry, aa1.soc, aa1.voltage, aa1.temperature) == ("nimh", 100, 1400, 25)
+    assert (aa1.chemistry, aa1.soc, aa1.voltage, aa1.byte12) == ("nimh", 100, 1400, 25)
 
 
 def test_published_dump_degrades_to_the_trustworthy_bay():
@@ -52,15 +60,15 @@ def test_published_dump_degrades_to_the_trustworthy_bay():
     slots = decode_slots(PUBLISHED_DUMP)
     assert len(bytes.fromhex(PUBLISHED_DUMP)) == 65
     assert set(slots) == {3}
-    assert (slots[3].voltage, slots[3].temperature, slots[3].soc) == (1400, 25, 100)
+    assert (slots[3].voltage, slots[3].byte12, slots[3].soc) == (1400, 25, 100)
 
 
 def test_empty_bay_reports_none_not_zero():
     """0 mV means no cell. Reporting 0% would read as a dead battery instead of an empty bay."""
-    slots = decode_slots(payload(record(3, chem=0, soc=0, mv=0, temp=0)))
+    slots = decode_slots(payload(record(3, chem=0, soc=0, mv=0, byte12=0)))
     bay = slots[3]
     assert bay.occupied is False
-    assert bay.soc is None and bay.voltage is None and bay.temperature is None
+    assert bay.soc is None and bay.voltage is None and bay.byte12 is None
 
 
 def test_charging_is_driven_by_current():
@@ -111,3 +119,45 @@ def test_unknown_slot_ids_are_ignored():
 
 def test_labels_cover_every_slot():
     assert set(protocol.SLOT_LABELS) == set(SLOT_ORDER) == set(protocol.SLOT_SIZE)
+
+
+def test_byte12_over_100_does_not_drop_the_record():
+    """Owners see byte 12 near 100 during a fast charge; whatever it is, it must not take the
+    bay offline. It is not part of the plausibility check."""
+    slots = decode_slots(payload(record(3, soc=60, ca=120, byte12=130)))
+    assert slots[3].byte12 == 130 and slots[3].voltage == 1400
+
+
+def test_hex_text_is_not_misread_as_base64():
+    """A 136-char hex string is also syntactically valid base64 and decodes to 102 bytes — a
+    multiple of 17. The decoder must still recognise it as hex."""
+    raw = payload(*(record(s) for s in SLOT_ORDER))
+    assert len(raw) == 136
+    slots = decode_slots(raw)
+    assert set(slots) == set(SLOT_ORDER) and slots[3].voltage == 1400
+
+
+def test_base64_is_preferred_when_that_is_what_the_device_sent():
+    import base64
+    raw = b"".join(record(s) for s in SLOT_ORDER)
+    text = base64.b64encode(raw).decode()
+    assert set(decode_slots(text)) == set(SLOT_ORDER)
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("AAAA", (time(0, 0), time(0, 0))),          # factory default: three zero bytes
+    ("FgAHHg==", (time(22, 0), time(7, 30))),     # 22:00 - 07:30
+    (bytes([6, 15, 8, 45]), (time(6, 15), time(8, 45))),
+])
+def test_pause_window_decodes(value, expected):
+    assert decode_pause_window(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", None, 5, "not base64!", "GAAAAA=="])  # 24:00 is invalid
+def test_pause_window_rejects_junk(value):
+    assert decode_pause_window(value) is None
+
+
+def test_pause_window_round_trips():
+    start, end = time(23, 59), time(5, 1)
+    assert decode_pause_window(encode_pause_window(start, end)) == (start, end)

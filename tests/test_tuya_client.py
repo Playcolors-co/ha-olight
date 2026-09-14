@@ -26,6 +26,7 @@ class FakeDevice:
     def set_socketTimeout(self, v): self.calls.append(("timeout", v))
     def set_socketRetryLimit(self, v): self.calls.append(("retry", v))
     def close(self): self.closed = True
+    def heartbeat(self, nowait=False): self.calls.append(("heartbeat",))
 
     def _next(self):
         reply = self.replies.pop(0)
@@ -134,3 +135,28 @@ def test_set_dp_failure_resets_the_socket(client, monkeypatch):
 
 def test_close_is_safe_when_never_connected(client):
     client.OstationClient("d" * 22, "h", "k" * 16).close()
+
+
+def test_heartbeat_is_sent_only_when_connected(client, monkeypatch):
+    monkeypatch.setattr(FakeDevice, "__init__", new_device_with({"dps": {"101": True}}))
+    c = client.OstationClient("d" * 22, "h", "k" * 16)
+    assert c.heartbeat() is False          # nothing to keep alive yet, and no socket opened for it
+    assert FakeDevice.instances == []
+    c.status()
+    assert c.heartbeat() is True
+    assert ("heartbeat",) in FakeDevice.instances[0].calls
+
+
+def test_failed_heartbeat_drops_the_socket_so_the_next_poll_starts_clean(client, monkeypatch):
+    monkeypatch.setattr(FakeDevice, "__init__",
+                        new_device_with({"dps": {"101": True}}, {"dps": {"101": True}}))
+    c = client.OstationClient("d" * 22, "h", "k" * 16)
+    c.status()
+
+    def boom(self, nowait=False): raise OSError("reset by peer")
+    monkeypatch.setattr(FakeDevice, "heartbeat", boom)
+    assert c.heartbeat() is False
+    assert FakeDevice.instances[0].closed is True
+    monkeypatch.setattr(FakeDevice, "heartbeat", lambda self, nowait=False: None)
+    assert c.status() == {"101": True}     # reconnects without needing its retry
+    assert len(FakeDevice.instances) == 2

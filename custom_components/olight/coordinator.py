@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -41,6 +41,10 @@ class OstationCoordinator(DataUpdateCoordinator[OstationData]):
         # A poll that carries no telemetry still carries the booleans; decode what's there rather
         # than failing the whole update and blanking every entity.
         return OstationData(dps=dps, slots=decode_slots(dps.get(str(DP_TELEMETRY))))
+
+    async def async_heartbeat(self, _now: datetime | None = None) -> None:
+        """Keep-alive between polls; driven by a Home Assistant time interval, not a thread."""
+        await self.hass.async_add_executor_job(self.client.heartbeat)
 
     async def async_set_dp(self, dp: int, value) -> None:
         """Write a datapoint, then refresh so the UI reflects what the station actually did.

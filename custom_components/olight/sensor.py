@@ -14,7 +14,6 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
-    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
@@ -59,12 +58,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: OlightConfigEntry,
                              unit=UnitOfElectricCurrent.MILLIAMPERE,
                              dclass=SensorDeviceClass.CURRENT,
                              sclass=SensorStateClass.MEASUREMENT),
-            # Reported temperature climbs implausibly high during a fast charge; kept as a
-            # diagnostic until it can be checked against a probe on the cell.
-            OlightSlotSensor(c, entry, slot, "temperature", "Temperature",
-                             lambda s: s.temperature,
-                             unit=UnitOfTemperature.CELSIUS,
-                             dclass=SensorDeviceClass.TEMPERATURE,
+            # Byte 12 of the record is unmapped upstream. The community first read it as a
+            # temperature (~25 at rest) but it is reported near 100 during a fast charge and
+            # tracks the *other* bay's activity, so it is exposed raw, without a unit, until
+            # someone establishes what it is.
+            OlightSlotSensor(c, entry, slot, "byte12", "Byte 12", lambda s: s.byte12,
                              sclass=SensorStateClass.MEASUREMENT, diag=True),
             OlightSlotSensor(c, entry, slot, "chemistry", "Chemistry",
                              lambda s: CHEMISTRY_LABELS.get(s.chemistry, s.chemistry)),

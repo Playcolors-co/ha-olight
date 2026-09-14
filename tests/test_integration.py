@@ -10,6 +10,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.olight.tuya_client import HEARTBEAT_INTERVAL
 from custom_components.olight.const import (
     CONF_DEVICE_ID,
     CONF_LOCAL_KEY,
@@ -45,7 +46,7 @@ async def test_station_and_four_bays_are_registered_as_devices(
         assert d.via_device_id == station.id
     ent = er.async_get(hass)
     entities = er.async_entries_for_config_entry(ent, entry.entry_id)
-    assert len(entities) == 41
+    assert len(entities) == 43
 
 
 async def test_bay_readings_match_the_payload(hass: HomeAssistant, fake_station) -> None:
@@ -55,7 +56,7 @@ async def test_bay_readings_match_the_payload(hass: HomeAssistant, fake_station)
     assert s.get("sensor.aa1_charge").state == "100"
     assert s.get("sensor.aa1_voltage").state == "1400"
     assert s.get("sensor.aa1_current").state == "0"
-    assert s.get("sensor.aa1_temperature").state == "25"
+    assert s.get("sensor.aa1_byte_12").state == "25"
     assert s.get("sensor.aa1_chemistry").state == "Ni-MH"
     assert s.get("binary_sensor.aa1_battery_present").state == STATE_ON
     assert s.get("binary_sensor.aa1_charging").state == STATE_OFF
@@ -82,6 +83,26 @@ async def test_station_entities(hass: HomeAssistant, fake_station) -> None:
     assert s.get("binary_sensor.ostation_2_pro_rejected_bin_full").state == STATE_OFF
 
 
+async def test_quiet_hours_window_is_decoded_and_written_back(
+        hass: HomeAssistant, fake_station) -> None:
+    fake_station.dps["112"] = "FgAHHg=="  # 22:00 - 07:30
+    await _setup(hass)
+    assert hass.states.get("time.ostation_2_pro_quiet_hours_start").state == "22:00:00"
+    assert hass.states.get("time.ostation_2_pro_quiet_hours_end").state == "07:30:00"
+    await hass.services.async_call(
+        "time", "set_value",
+        {"entity_id": "time.ostation_2_pro_quiet_hours_end", "time": "06:45:00"}, blocking=True)
+    await hass.async_block_till_done()
+    assert fake_station.writes == [(112, "FgAGLQ==")]  # start kept, end replaced
+
+
+async def test_never_configured_window_reads_as_midnight(
+        hass: HomeAssistant, fake_station) -> None:
+    fake_station.dps["112"] = "AAAA"  # three zero bytes, as shipped
+    await _setup(hass)
+    assert hass.states.get("time.ostation_2_pro_quiet_hours_start").state == "00:00:00"
+
+
 async def test_switch_writes_the_datapoint_and_refreshes(
         hass: HomeAssistant, fake_station) -> None:
     await _setup(hass)
@@ -105,7 +126,7 @@ async def test_poll_picks_up_a_cell_being_inserted(
         hass: HomeAssistant, fake_station) -> None:
     await _setup(hass)
     assert hass.states.get("binary_sensor.aaa1_battery_present").state == STATE_OFF
-    fake_station.dps["110"] = _with_aaa1(bay(1, soc=10, mv=1210, ca=30, temp=22))
+    fake_station.dps["110"] = _with_aaa1(bay(1, soc=10, mv=1210, ca=30, byte12=22))
     before = fake_station.polls
     _advance_one_poll(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
@@ -141,3 +162,17 @@ async def test_unload_closes_the_socket(hass: HomeAssistant, fake_station) -> No
     assert all(d.closed for d in fake_station.instances)
     assert hass.states.get("sensor.aa1_voltage") is None or \
         hass.states.get("sensor.aa1_voltage").state == STATE_UNAVAILABLE
+
+
+async def test_heartbeat_runs_on_the_timer_and_stops_with_the_entry(
+        hass: HomeAssistant, fake_station) -> None:
+    entry = await _setup(hass)
+    assert fake_station.heartbeats == 0
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=HEARTBEAT_INTERVAL + 1))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert fake_station.heartbeats == 1
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2 * HEARTBEAT_INTERVAL + 2))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert fake_station.heartbeats == 1  # unsubscribed: nothing keeps poking a closed socket

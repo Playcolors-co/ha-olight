@@ -5,6 +5,11 @@ at a time** — if Home Assistant reconnects on every poll, or the Olight app is
 time, the station drops whoever connected first. So we hold one persistent socket per device and
 serialise every call through it.
 
+The station also **closes an idle socket**: owners who scripted it report that without regular
+heartbeats "the Ostation will kill the socket connection". `heartbeat()` is the keep-alive; the
+caller decides the cadence (the coordinator uses Home Assistant's own timer, so nothing lingers
+when the entry unloads).
+
 tinytuya is synchronous; the coordinator runs these methods in an executor thread.
 """
 
@@ -19,6 +24,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = 3.5
 _CONNECT_TIMEOUT = 5
+# Below the ~10 s at which Tuya firmware tends to give up on a quiet socket.
+HEARTBEAT_INTERVAL = 8.0
 
 
 class OstationError(Exception):
@@ -95,6 +102,26 @@ class OstationClient:
             except Exception as err:  # noqa: BLE001
                 self._reset()
                 raise OstationError(str(err)) from err
+
+    def heartbeat(self) -> bool:
+        """Keep the persistent socket alive. Returns whether one was sent.
+
+        Does nothing when not connected: the next real call opens the socket, and a heartbeat
+        should never be the thing that establishes a connection. On failure the socket is dropped
+        so the next poll starts clean instead of spending its single retry on a dead one.
+        """
+        with self._lock:
+            if self._device is None:
+                return False
+            try:
+                # Wait for the ack rather than fire-and-forget: an unread ack left in the socket
+                # buffer would be the first thing the next status() call reads.
+                self._device.heartbeat(nowait=False)
+                return True
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("heartbeat failed, dropping the socket: %s", err)
+                self._reset()
+                return False
 
     def close(self) -> None:
         with self._lock:

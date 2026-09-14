@@ -15,15 +15,15 @@ LOCAL_KEY = "0123456789abcdef"        # 16 chars
 HOST = "192.168.1.50"
 
 
-def bay(slot, chem=0x01, soc=100, hours=0, mins=0, mv=1400, ca=0, temp=25) -> bytes:
+def bay(slot, chem=0x01, soc=100, hours=0, mins=0, mv=1400, ca=0, byte12=25) -> bytes:
     """One 17-byte DP110 record."""
     return (bytes([slot, chem, soc, hours, mins, 0, 0, 0]) + mv.to_bytes(2, "big")
-            + ca.to_bytes(2, "big") + bytes([temp, 0, 0, 0, 0]))
+            + ca.to_bytes(2, "big") + bytes([byte12, 0, 0, 0, 0]))
 
 
 def telemetry(**overrides) -> str:
     """A full four-bay DP110 payload; pass slot=bytes to override a bay."""
-    default = {3: bay(3), 4: bay(4, soc=40, ca=50), 1: bay(1, chem=0, soc=0, mv=0, temp=0), 2: bay(2)}
+    default = {3: bay(3), 4: bay(4, soc=40, ca=50), 1: bay(1, chem=0, soc=0, mv=0, byte12=0), 2: bay(2)}
     default.update(overrides)
     return b"".join(default[s] for s in (3, 4, 1, 2)).hex()
 
@@ -45,6 +45,7 @@ class FakeTuyaDevice:
     instances: list = []
     writes: list = []
     polls: int = 0
+    heartbeats: int = 0
 
     def __init__(self, dev_id, host, key):
         self.args = (dev_id, host, key)
@@ -56,6 +57,7 @@ class FakeTuyaDevice:
     def set_socketTimeout(self, v): pass
     def set_socketRetryLimit(self, v): pass
     def close(self): self.closed = True
+    def heartbeat(self, nowait=False): FakeTuyaDevice.heartbeats += 1
 
     def status(self):
         FakeTuyaDevice.polls += 1
@@ -85,6 +87,7 @@ def fake_station(monkeypatch):
     FakeTuyaDevice.instances = []
     FakeTuyaDevice.writes = []
     FakeTuyaDevice.polls = 0
+    FakeTuyaDevice.heartbeats = 0
     import tinytuya
     monkeypatch.setattr(tinytuya, "Device", FakeTuyaDevice)
     return FakeTuyaDevice

@@ -39,7 +39,7 @@ def render(dps: dict) -> str:
             continue
         lines.append(
             f"  {s.label:5s} {s.chemistry:9s} {s.soc:3d}%  {s.voltage} mV  {s.current} mA  "
-            f"{s.temperature if s.temperature is not None else '?'} C  {s.minutes} min  "
+            f"b12={s.byte12 if s.byte12 is not None else '?'}  {s.minutes} min  "
             f"{'charging' if s.charging else 'idle'}   raw={s.raw}"
         )
     return "\n".join(lines)

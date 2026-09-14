@@ -17,11 +17,11 @@ No cloud, no vendor app running in the background.
 
 ## What you get
 
-**The station** — charging on/off, quiet-hours toggle, wake sensitivity, cells charged, cells
+**The station** — charging on/off, quiet-hours toggle and window (start/end), wake sensitivity, cells charged, cells
 rejected, and three fill warnings (rejected bin, AA compartment, AAA compartment).
 
 **Each bay, as its own device** — battery present, charging, charge %, voltage, current,
-temperature, chemistry (Ni-MH / Li-ion / detecting) and elapsed charging time.
+chemistry (Ni-MH / Li-ion / detecting), elapsed charging time and the still-unexplained byte 12.
 
 ## Requirements
 
@@ -97,14 +97,13 @@ cost down and the connection stable.
 
 ## Known rough edges
 
-- **Temperature** climbs implausibly high during a fast charge, so it is exposed as a diagnostic
-  entity. Treat it as a trend, not a calibrated reading, until someone verifies it against a probe.
-- **Li-ion detection** is reported as unreliable by the community; a Li-ion AA may show as
-  `detecting` or as Ni-MH.
-- **DP113** has no known meaning. It is exposed as a diagnostic sensor so its behaviour can be
-  observed; if you work out what it does, please open an issue.
-- **DP112** (the quiet-hours window) is not decoded — only the on/off toggle is. The payload
-  encoding is still unconfirmed.
+- **Byte 12** of each bay record is unmapped. The community first read it as a temperature (~25
+  at rest), but it is reported near 100 during a fast charge and appears to track the *other*
+  bay's activity, and the upstream tuya-local config leaves it unknown. It is exposed raw, as a
+  unitless diagnostic, until someone establishes what it is. Bytes 5–7 and 13–16 are zero for
+  Ni-MH and reportedly carry something for Li-ion; they are not decoded yet.
+- **DP113** has no known meaning and has only ever been seen at 0. It is exposed as a diagnostic
+  sensor so its behaviour can be observed; if you work out what it does, please open an issue.
 - A cell keeps reporting a **ghost voltage** for a short while after you pull it. Voltage dropping
   to exactly 0 mV is the reliable "bay is empty" signal, and that is what `Battery present` uses.
 - Detection takes about **3 minutes** of probing before charging starts.
@@ -119,7 +118,9 @@ the Sphere must be paired through the Olight app first.
 
 ## Protocol notes
 
-The station is Tuya product `rcj4z3pdmhkzflio`, protocol 3.5. Its datapoints:
+The station is a Tuya protocol 3.5 device (product ids seen so far: `1fnensm6`, `v8znljza`,
+`rcj4z3pdmhkzflio`). It closes an idle socket, so the client sends a heartbeat every 8 s on the
+persistent connection. Its datapoints:
 
 | DP | Type | Meaning |
 |---|---|---|
@@ -132,15 +133,16 @@ The station is Tuya product `rcj4z3pdmhkzflio`, protocol 3.5. Its datapoints:
 | 108 | int | cells rejected |
 | 110 | raw | per-bay telemetry (below) |
 | 111 | bool | quiet hours enabled |
-| 112 | raw | quiet-hours window (undecoded) |
-| 113 | int | unknown |
+| 112 | raw | quiet-hours window: `[start h, start m, end h, end m]`, base64 |
+| 113 | int | unknown, always 0 so far |
 
-**DP110** is 68 bytes: four 17-byte records, one per bay, in the order AA1, AA2, AAA1, AAA2. Each
-record carries its own bay id, so this integration keys off that rather than the record's position.
+**DP110** is 68 bytes, sent base64-encoded: four 17-byte records, one per bay, in the order AA1,
+AA2, AAA1, AAA2. Each record carries its own bay id, so this integration keys off that rather than
+the record's position. Layout agrees with the upstream tuya-local config.
 
 ```
 offset  0     1      2     3   4    5-7   8-9      10-11      12    13-16
-field   slot  chem   SoC%  h   min  pad   mV (BE)  mA÷10 (BE) °C    pad
+field   slot  chem   SoC%  h   min  ?     mV (BE)  mA÷10 (BE) ?     ?
               00 detecting
               01 Ni-MH
               02 Li-ion
