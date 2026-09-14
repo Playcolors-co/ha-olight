@@ -10,6 +10,14 @@
           "local_key": "Local key",
           "name": "Name"
         }
+      },
+      "reconfigure": {
+        "title": "Update the station's address or key",
+        "description": "Station {device_id}. Re-pairing or a factory reset makes Tuya issue a new local key, and DHCP can move the IP; update either here without removing the device.",
+        "data": {
+          "host": "IP address",
+          "local_key": "Local key"
+        }
       }
     },
     "error": {
@@ -18,7 +26,8 @@
       "invalid_local_key": "A Tuya local key is 16 characters long."
     },
     "abort": {
-      "already_configured": "This station is already set up."
+      "already_configured": "This station is already set up.",
+      "reconfigure_successful": "The station has been updated."
     }
   }
 }

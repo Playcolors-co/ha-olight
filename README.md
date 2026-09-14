@@ -42,15 +42,28 @@ only decrypts it at runtime. So there is no purely-static shortcut; the fully lo
 is to run the app once and read the key from Android's log.
 
 **Fully local (recommended):** an Android **emulator** on your own machine — no phone, no cloud.
-Step-by-step in **[docs/GET-LOCAL-KEY.md](docs/GET-LOCAL-KEY.md)**. The short version: create a
-Google-APIs emulator, install the Olight app, sign into the account your station is paired to, then
+One script does the whole thing (SDK, emulator, app install, log capture) on macOS or Linux:
 
 ```bash
-adb logcat -v raw -s Thing-Network:D -e 'localkey:|deviceId:'
+./tools/extract_key.sh
 ```
 
-Force-stop and reopen the app; the device id and local key appear as it re-syncs. No root, no Frida.
-(A borrowed Android phone works identically, if you have one.)
+It boots the emulator, installs the Olight app and then waits on the log; the only thing you do is
+sign into the account your station is paired to, in the emulator window. When the key appears it is
+printed and saved to `tools/ostation-key.env`. Step-by-step and the manual equivalent in
+**[docs/GET-LOCAL-KEY.md](docs/GET-LOCAL-KEY.md)**. No root, no Frida. (A borrowed Android phone
+works identically with the one `adb logcat` line in that doc.)
+
+**Check the key before touching Home Assistant:**
+
+```bash
+python3 tools/probe.py --host <ip> --id <device id> --key <local key>     # one read
+python3 tools/probe.py ... --watch                                         # live, on change
+```
+
+It prints every raw datapoint and the decoded state of all four bays, using the exact decoder the
+integration ships. Keep its output when reporting anything — the raw DP110 is what confirms the
+payload layout on your firmware.
 
 **Optional one-time cloud shortcut:** if you are willing to touch Tuya's cloud once,
 [`tools/get_local_key.py`](tools/get_local_key.py) reads the key from the Tuya IoT platform after
@@ -69,6 +82,10 @@ Integration → install → restart Home Assistant.
 
 Then **Settings → Devices & Services → Add Integration → Olight**, and enter the station's IP,
 device ID and local key.
+
+**If the key or IP changes later** (re-pairing or a factory reset makes Tuya issue a new key; DHCP
+can move the address), open the station's entry and choose **Reconfigure** — the device and its
+history stay intact. There is no need to delete and re-add.
 
 ## One connection at a time
 

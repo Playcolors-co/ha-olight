@@ -4,13 +4,16 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   test:
-    name: Decoder tests + lint
+    name: Lint + decoder/client tests + Home Assistant integration tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pip install pytest ruff
+          python-version: "3.13"
+      - run: pip install ruff pytest-homeassistant-custom-component tinytuya
       - run: python -m ruff check .
-      - run: python -m pytest tests/ -v
+      # The decoder and client tests need no Home Assistant; the rest boot a real HA core with
+      # tinytuya.Device replaced by a scripted fake, so the whole integration is exercised
+      # end to end without a station.
+      - run: python -m pytest tests/ -v -p no:cacheprovider
