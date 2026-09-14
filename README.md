@@ -1,0 +1,139 @@
+# Olight for Home Assistant (unofficial)
+
+**Your Olight Ostation 2 Pro as a real Home Assistant device** — every bay, every cell, locally.
+No cloud, no vendor app running in the background.
+
+[![tests](https://github.com/Playcolors-co/ha-olight/actions/workflows/test.yml/badge.svg)](https://github.com/Playcolors-co/ha-olight/actions/workflows/test.yml)
+
+| | |
+|---|---|
+| 🔋 **Per-cell telemetry** | charge %, voltage, current, chemistry, elapsed time — for each of the four bays |
+| 🧭 **Bays as sub-devices** | AA1, AA2, AAA1, AAA2 each appear as their own device under the station |
+| 🏠 **Fully local** | Tuya protocol 3.5 over your LAN; the station never has to reach the internet |
+| 🤖 **Automatable** | notify when a cell finishes, when the reject bin fills, or pause charging off-peak |
+
+> ⚠️ Independent, unofficial project. Not affiliated with Olight or Tuya. It interoperates with
+> **your own** device on **your own** network. It may break if Olight changes the firmware.
+
+## What you get
+
+**The station** — charging on/off, quiet-hours toggle, wake sensitivity, cells charged, cells
+rejected, and three fill warnings (rejected bin, AA compartment, AAA compartment).
+
+**Each bay, as its own device** — battery present, charging, charge %, voltage, current,
+temperature, chemistry (Ni-MH / Li-ion / detecting) and elapsed charging time.
+
+## Requirements
+
+- An **Ostation 2 Pro** on your Wi-Fi. The station needs **2.4 GHz** — it will not join a 5 GHz
+  network, and it does not support Wi-Fi Direct.
+- Its Tuya **device ID** and **local key** (below).
+- A static IP or DHCP reservation for the station is strongly recommended.
+
+## Getting the device ID and local key
+
+The station speaks a standard, documented protocol — but Tuya encrypts the LAN session with a
+per-device key that only the vendor app knows. **You do not need to decompile anything**: the Tuya
+SDK inside the Osite app writes both values to Android's log.
+
+1. Enable **Developer options → USB debugging** on an Android phone and connect it.
+2. Install the Osite app, sign in, and make sure the station shows up.
+3. With the phone connected, run:
+
+   ```bash
+   adb logcat -v raw -s Thing-Network:D -e 'localkey:|deviceId:'
+   ```
+
+4. Force-stop and reopen Osite. The device ID (22 characters) and local key (16 characters) appear
+   in the log as the app re-syncs.
+
+No root and no Frida needed. If your app build logs nothing, the fallback is a Tuya IoT developer
+account — but note that vendor-branded apps often sit on a partitioned slice of the Tuya cloud that
+the standard developer APIs cannot see.
+
+## Install
+
+**HACS** → Custom repositories → add `https://github.com/Playcolors-co/ha-olight` as an
+Integration → install → restart Home Assistant.
+
+**Manually** → copy `custom_components/olight` into your `config/custom_components/` → restart.
+
+Then **Settings → Devices & Services → Add Integration → Olight**, and enter the station's IP,
+device ID and local key.
+
+## One connection at a time
+
+The station accepts a **single local connection**. While Home Assistant is polling it, the Osite
+app will not connect — and if you open Osite, Home Assistant is dropped until its next poll. This
+is a limitation of the station, not of this integration. The integration holds one persistent
+socket and polls every 15 seconds rather than reconnecting each time, which keeps the handshake
+cost down and the connection stable.
+
+## Known rough edges
+
+- **Temperature** climbs implausibly high during a fast charge, so it is exposed as a diagnostic
+  entity. Treat it as a trend, not a calibrated reading, until someone verifies it against a probe.
+- **Li-ion detection** is reported as unreliable by the community; a Li-ion AA may show as
+  `detecting` or as Ni-MH.
+- **DP113** has no known meaning. It is exposed as a diagnostic sensor so its behaviour can be
+  observed; if you work out what it does, please open an issue.
+- **DP112** (the quiet-hours window) is not decoded — only the on/off toggle is. The payload
+  encoding is still unconfirmed.
+- A cell keeps reporting a **ghost voltage** for a short while after you pull it. Voltage dropping
+  to exactly 0 mV is the reliable "bay is empty" signal, and that is what `Battery present` uses.
+- Detection takes about **3 minutes** of probing before charging starts.
+
+## Other Olight devices
+
+**Sphere ambient lights** are BLE SIG Mesh behind a Tuya Bluetooth gateway, and are already
+supported upstream by [tuya-local](https://github.com/make-all/tuya-local)
+(`olight_sphere_light.yaml`, product id `d0dpga0h`). Use that rather than this integration — there
+is no reason to reimplement a config someone already merged. You will need a Tuya BT gateway, and
+the Sphere must be paired through the Olight app first.
+
+## Protocol notes
+
+The station is Tuya product `rcj4z3pdmhkzflio`, protocol 3.5. Its datapoints:
+
+| DP | Type | Meaning |
+|---|---|---|
+| 101 | bool | charging enabled |
+| 102 | int | cells fully charged |
+| 103 | bool | rejected-battery bin full |
+| 104 | bool | AA compartment full |
+| 105 | int | wake sensitivity (1–5) |
+| 106 | bool | AAA compartment full |
+| 108 | int | cells rejected |
+| 110 | raw | per-bay telemetry (below) |
+| 111 | bool | quiet hours enabled |
+| 112 | raw | quiet-hours window (undecoded) |
+| 113 | int | unknown |
+
+**DP110** is 68 bytes: four 17-byte records, one per bay, in the order AA1, AA2, AAA1, AAA2. Each
+record carries its own bay id, so this integration keys off that rather than the record's position.
+
+```
+offset  0     1      2     3   4    5-7   8-9      10-11      12    13-16
+field   slot  chem   SoC%  h   min  pad   mV (BE)  mA÷10 (BE) °C    pad
+              00 detecting
+              01 Ni-MH
+              02 Li-ion
+```
+
+> The DP110 dump published in [tuya-local issue #6069](https://github.com/make-all/tuya-local/issues/6069)
+> is 65 bytes rather than 68 — zero bytes were lost in transcription, and only its first record is
+> intact. That record is what independently confirms this layout: `0578` → 1400 mV and `19` → 25 °C
+> are both exactly right for a charged Ni-MH cell at room temperature. The decoder resynchronises
+> on record headers and drops any record whose values are physically impossible, so a malformed or
+> revised payload degrades to fewer bays instead of inventing readings.
+
+## Credits
+
+The datapoint map and the initial DP110 analysis come from the Home Assistant community thread
+[Integrating the Olight Ostation 2 in Home Assistant](https://community.home-assistant.io/t/integrating-the-olight-ostation-2-in-home-assistant-guide/1004530)
+and tuya-local issue #6069. This project turns that work into a first-class integration with
+per-bay devices and a hardened decoder.
+
+## License
+
+MIT.
