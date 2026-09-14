@@ -33,23 +33,32 @@ temperature, chemistry (Ni-MH / Li-ion / detecting) and elapsed charging time.
 ## Getting the device ID and local key
 
 The station speaks a standard, documented protocol — but Tuya encrypts the LAN session with a
-per-device key that only the vendor app knows. **You do not need to decompile anything**: the Tuya
-SDK inside the Osite app writes both values to Android's log.
+16-character key that is unique to your unit. You need it (and the 22-character device id) **once**;
+after that everything is on your LAN and you can block the station from the internet.
 
-1. Enable **Developer options → USB debugging** on an Android phone and connect it.
-2. Install the Osite app, sign in, and make sure the station shows up.
-3. With the phone connected, run:
+The controlling app is the ordinary **Olight** app (`com.olight.omall`) — there is no separate
+"Osite" app — and it is built on the Tuya SDK, which caches the key **encrypted, per device** and
+only decrypts it at runtime. So there is no purely-static shortcut; the fully local way to read it
+is to run the app once and read the key from Android's log.
 
-   ```bash
-   adb logcat -v raw -s Thing-Network:D -e 'localkey:|deviceId:'
-   ```
+**Fully local (recommended):** an Android **emulator** on your own machine — no phone, no cloud.
+Step-by-step in **[docs/GET-LOCAL-KEY.md](docs/GET-LOCAL-KEY.md)**. The short version: create a
+Google-APIs emulator, install the Olight app, sign into the account your station is paired to, then
 
-4. Force-stop and reopen Osite. The device ID (22 characters) and local key (16 characters) appear
-   in the log as the app re-syncs.
+```bash
+adb logcat -v raw -s Thing-Network:D -e 'localkey:|deviceId:'
+```
 
-No root and no Frida needed. If your app build logs nothing, the fallback is a Tuya IoT developer
-account — but note that vendor-branded apps often sit on a partitioned slice of the Tuya cloud that
-the standard developer APIs cannot see.
+Force-stop and reopen the app; the device id and local key appear as it re-syncs. No root, no Frida.
+(A borrowed Android phone works identically, if you have one.)
+
+**Optional one-time cloud shortcut:** if you are willing to touch Tuya's cloud once,
+[`tools/get_local_key.py`](tools/get_local_key.py) reads the key from the Tuya IoT platform after
+you link your app account by QR scan. Runtime stays fully local either way — this only affects how
+you obtain the key the first time.
+
+See **[docs/REVERSE-ENGINEERING.md](docs/REVERSE-ENGINEERING.md)** for how all of this was
+established (the app is a Tuya app, the key is cloud-issued and pinned, etc.).
 
 ## Install
 
@@ -63,8 +72,8 @@ device ID and local key.
 
 ## One connection at a time
 
-The station accepts a **single local connection**. While Home Assistant is polling it, the Osite
-app will not connect — and if you open Osite, Home Assistant is dropped until its next poll. This
+The station accepts a **single local connection**. While Home Assistant is polling it, the Olight
+app will not connect — and if you open the Olight app, Home Assistant is dropped until its next poll. This
 is a limitation of the station, not of this integration. The integration holds one persistent
 socket and polls every 15 seconds rather than reconnecting each time, which keeps the handshake
 cost down and the connection stable.
@@ -134,6 +143,6 @@ The datapoint map and the initial DP110 analysis come from the Home Assistant co
 and tuya-local issue #6069. This project turns that work into a first-class integration with
 per-bay devices and a hardened decoder.
 
-## License
+## Licence
 
 MIT.

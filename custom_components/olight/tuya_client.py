@@ -1,7 +1,7 @@
 """Blocking Tuya LAN client, kept off the event loop.
 
 The Ostation speaks Tuya protocol 3.5 on the local network and **accepts a single local connection
-at a time** — if Home Assistant reconnects on every poll, or the Osite app is open at the same
+at a time** — if Home Assistant reconnects on every poll, or the Olight app is open at the same
 time, the station drops whoever connected first. So we hold one persistent socket per device and
 serialise every call through it.
 

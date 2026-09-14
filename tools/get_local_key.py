@@ -5,7 +5,7 @@ Prerequisites (one-off, ~15 minutes, free):
   1. Sign up at https://iot.tuya.com and create a Cloud project (Smart Home, your data centre —
      for Italy that's "Central Europe").
   2. Project → Devices → Link App Account → Add App Account → scan the QR code with the app that
-     holds the station (Osite: Me → scan icon; or Smart Life if you re-paired it there).
+     holds the station (the Olight app: Me → scan icon; or Smart Life if you re-paired it there).
   3. Project → Overview: copy Access ID and Access Secret.
 
 Then:

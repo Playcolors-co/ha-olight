@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Olight Ostation",
-        "description": "The station is controlled entirely over your local network. You need its Tuya device ID and local key — see the README for how to read them from the Osite app.",
+        "description": "The station is controlled entirely over your local network. You need its Tuya device ID and local key — see the README for how to read them from the Olight app.",
         "data": {
           "host": "IP address",
           "device_id": "Device ID",
@@ -13,7 +13,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not reach the station. Check the IP address and the local key, and close the Osite app — the station accepts only one local connection at a time.",
+      "cannot_connect": "Could not reach the station. Check the IP address and the local key, and close the Olight app — the station accepts only one local connection at a time.",
       "invalid_device_id": "A Tuya device ID is 22 characters long.",
       "invalid_local_key": "A Tuya local key is 16 characters long."
     },

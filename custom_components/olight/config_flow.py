@@ -2,7 +2,7 @@
 
 Everything the station exposes is local, so there is no account to sign into — but Tuya's LAN
 protocol is encrypted with a per-device local key that only the vendor app knows. See the README
-for how to read it out of the Osite app; there's nothing to reverse engineer, the Tuya SDK logs it.
+for how to read it out of the Olight app; there's nothing to reverse engineer, the Tuya SDK logs it.
 """
 
 from __future__ import annotations
