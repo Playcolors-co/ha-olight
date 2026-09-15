@@ -65,10 +65,15 @@ It prints every raw datapoint and the decoded state of all four bays, using the 
 integration ships. Keep its output when reporting anything — the raw DP110 is what confirms the
 payload layout on your firmware.
 
-**Optional one-time cloud shortcut:** if you are willing to touch Tuya's cloud once,
-[`tools/get_local_key.py`](tools/get_local_key.py) reads the key from the Tuya IoT platform after
-you link your app account by QR scan. Runtime stays fully local either way — this only affects how
-you obtain the key the first time.
+**Phone only, one-time cloud lookup:** no emulator, no Android — a Tuya developer project, one QR
+scan, and [`tools/get_local_key.py`](tools/get_local_key.py). Step-by-step in
+**[docs/GET-LOCAL-KEY-CLOUD.md](docs/GET-LOCAL-KEY-CLOUD.md)**. Runtime stays fully local either
+way — this only affects how you obtain the key the first time.
+
+> **Paired the station "without an account"?** Then the Olight app is holding it under an
+> anonymous Tuya account nobody else can sign into, so the emulator route is closed to you — and
+> there is nothing to lose by re-pairing it with Smart Life, which makes the cloud lookup the
+> documented, reliable path. The doc above covers exactly this.
 
 See **[docs/REVERSE-ENGINEERING.md](docs/REVERSE-ENGINEERING.md)** for how all of this was
 established (the app is a Tuya app, the key is cloud-issued and pinned, etc.).
